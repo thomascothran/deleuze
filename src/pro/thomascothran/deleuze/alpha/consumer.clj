@@ -1,6 +1,8 @@
-(ns dev.thomascothran.deleuze.alpha.consumer
-  (:require [dev.thomascothran.deleuze.alpha.topics
-             :as topics])
+(ns pro.thomascothran.deleuze.alpha.consumer
+  (:require [pro.thomascothran.deleuze.alpha.topics
+             :as topics]
+            [clojure.walk :refer [keywordize-keys]]
+            [taoensso.nippy :refer [thaw]])
   (:import [org.apache.pulsar.client.api SubscriptionType]))
 
 (defn consumer
@@ -40,5 +42,18 @@
   [{consumer :pulsar/consumer
     callback ::callback}]
   (loop [msg (.receive consumer)]
-    (when-not (= ::closed (callback msg))
-      (recur (.receive consumer)))))
+    (let [body (-> (.getData msg)
+                   thaw)
+          properties (-> (into {} (.getProperties msg))
+                         keywordize-keys
+                         (update :deleuze/serializer keyword))
+          m {:pulsar.message/body body
+             :pulsar.message/key (.getKey msg)
+             :pulsar.message/properties properties
+             :pulsar.topic/topic (.getTopicName msg)
+             :pulsar.message/sequence-id (.getSequenceId msg)
+             :pulsar.message/acknowledge!
+             #(.acknowledge consumer msg)}]
+      (when-not (= ::closed (callback m))
+        (recur (.receive consumer))))))
+

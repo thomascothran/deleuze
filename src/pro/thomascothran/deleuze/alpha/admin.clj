@@ -1,4 +1,4 @@
-(ns dev.thomascothran.deleuze.alpha.admin
+(ns pro.thomascothran.deleuze.alpha.admin
   (:import [org.apache.pulsar.client.admin PulsarAdmin]
            [org.apache.pulsar.common.policies.data TenantInfo]
            [java.util Set]))

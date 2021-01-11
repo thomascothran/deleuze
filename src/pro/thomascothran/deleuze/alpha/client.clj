@@ -1,4 +1,4 @@
-(ns dev.thomascothran.deleuze.alpha.client
+(ns pro.thomascothran.deleuze.alpha.client
   (:require [malli.json-schema :as json-schema]
             [jsonista.core :as j])
   (:import [org.apache.pulsar.client.api PulsarClient]
@@ -8,6 +8,10 @@
             JSONSchema
             SchemaDefinitionBuilderImpl]))
 
+(defn ->json-schema
+  [^SchemaDefinition schema-def]
+  (JSONSchema/of schema-def))
+
 (defn <-json-schema
   "WIP "
   [malli-schema]
@@ -16,12 +20,13 @@
         schema-def (-> (SchemaDefinitionBuilderImpl.)
                        (.withJsonDef json-def)
                        (.build))
-        #_#_schema (JSONSchema/of schema-def)]
-    #_schema
-    #_json-def))
+        schema (->json-schema schema-def)]
+    schema
+    json-def))
 (comment
   (->> (<-json-schema [:map [:test-field string?]])
-       (.getPojo)
+       type
+      #_(.getPojo)
       #_(instance? SchemaDefinition)
       #_(.getJsonDef)))
 

@@ -1,11 +1,11 @@
-(ns dev.thomascothran.deleuze.alpha.admin-fiddle
-  (:require [dev.thomascothran.deleuze.alpha.admin :as da]
-            [dev.thomascothran.deleuze.alpha.topics :as dt]
-            [dev.thomascothran.deleuze.alpha.client :as dc]
-            [dev.thomascothran.deleuze.alpha.consumer
+(ns pro.thomascothran.deleuze.alpha.admin-fiddle
+  (:require [pro.thomascothran.deleuze.alpha.admin :as da]
+            [pro.thomascothran.deleuze.alpha.topics :as dt]
+            [pro.thomascothran.deleuze.alpha.client :as dc]
+            [pro.thomascothran.deleuze.alpha.consumer
              :as consumer]
-            [dev.thomascothran.deleuze.alpha.message
-             :as message]
+            [pro.thomascothran.deleuze.alpha.producer
+             :as producer]
             [clojure.pprint :as pp]))
 
 (def -admin-url
@@ -55,21 +55,23 @@
                                 :pulsar.subscription/name
                                 "test-subscription"
                                 :pulsar.subscription/type :exclusive})]
-           (message/send! {:pulsar/producer producer
+           (producer/send! {:pulsar/producer producer
                            :pulsar.message/value "Hello world"
                            :pulsar.message/key
                            #uuid "744c98c5-8011-46d9-ad0f-68f59f5cd51d"})
 
-           (message/send! {:pulsar/producer producer
+           (producer/send! {:pulsar/producer producer
                            :pulsar.message/value "I love events"
                            :pulsar.message/key
                            #uuid "744c98c5-8011-46d9-ad0f-68f59f5cd51d"})
            (let [a (atom nil)
                  p (promise)
-                 cb (fn [msg]
-                      (pp/pprint {:received-msg
-                                  (-> msg (.getData) (String.))})
-                      (.acknowledge consumer msg)
+                 cb (fn [{body :pulsar.message/body
+                          acknowledge! :pulsar.message/acknowledge!
+                          :as msg}]
+                      (pp/pprint {:received-msg msg
+                                  :body body})
+                      (acknowledge!)
                       (if @a
                         (do (deliver p :done!)
                             ::consumer/closed)

@@ -1,4 +1,4 @@
-(ns dev.thomascothran.deleuze.alpha.topics)
+(ns pro.thomascothran.deleuze.alpha.topics)
 
 (defn topic-str
   [{persistent :pulsar.topic/persistent

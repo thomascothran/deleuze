@@ -21,12 +21,11 @@
                        (.withJsonDef json-def)
                        (.build))
         schema (->json-schema schema-def)]
-    schema
-    json-def))
+    #_schema
+    schema-def))
 (comment
   (->> (<-json-schema [:map [:test-field string?]])
-       type
-      #_(.getPojo)
+      (.getPojo)
       #_(instance? SchemaDefinition)
       #_(.getJsonDef)))
 

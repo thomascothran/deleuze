@@ -30,15 +30,19 @@
                 (da/tenant-info
                  {:pulsar/admin-client c
                   :pulsar.tenant/name "test-tenant"})})
-    (pp/pprint {:namespaces (da/get-namespaces
-                             {:pulsar/admin-client c
-                              :pulsar.tenant/name "test-tenant"})})
     (try (da/create-namespace! {:pulsar/admin-client c
-                            :pulsar.tenant/name "test-tenant"
-                                :pulsar.namespace/name "testns"})
+                                :pulsar.tenant/name "test-tenant"
+                               :pulsar.namespace/name "testns"})
          (catch Exception _
            (prn "Error creating namespace")))
-    (pp/pprint {:ns-auth (da/namespace-auth
+    (pp/pprint {:namespace (da/get-namespaces
+                            {:pulsar/admin-client c
+                             :pulsar.tenant/name "test-tenant"})})
+    (pp/pprint {:ns-policies (da/namespace-policies
+                              {:pulsar/admin-client c
+                               :pulsar.namespace/name "testns"
+                               :pulsar.tenant/name "test-tenant"})
+                :ns-auth (da/namespace-auth
                           {:pulsar/admin-client c
                            :pulsar.namespace/name "testns"
                            :pulsar.tenant/name "test-tenant"})})

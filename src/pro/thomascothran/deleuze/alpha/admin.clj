@@ -1,6 +1,8 @@
 (ns pro.thomascothran.deleuze.alpha.admin
   (:import [org.apache.pulsar.client.admin PulsarAdmin]
-           [org.apache.pulsar.common.policies.data TenantInfo]
+           [org.apache.pulsar.common.policies.data TenantInfo
+            RetentionPolicies]
+
            [java.util Set]))
 
 (declare get-namespaces)
@@ -65,13 +67,20 @@
 (defn create-namespace!
   [{:keys [:pulsar/admin-client]
     tenant-name :pulsar.tenant/name
-    nsn         :pulsar.namespace/name}]
+    retention   :pulsar.namespace/retention
+    nsn         :pulsar.namespace/name
+    :or {retention :infinite}}]
   (assert nsn)
   (assert admin-client)
   (assert tenant-name)
   (let [full-nsn (str tenant-name "/" nsn )]
     (-> (.namespaces admin-client)
-       (.createNamespace full-nsn))))
+        (.createNamespace full-nsn))
+    (-> (.namespaces admin-client)
+        (.setRetention full-nsn
+                       (case retention
+                         :infinite
+                         (RetentionPolicies. -1 -1))))))
 
 (defn delete-namespace!
   [{:keys [:pulsar/admin-client]

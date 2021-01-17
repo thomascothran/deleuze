@@ -10,3 +10,11 @@ services:
       - "6650:6650"
       - "8080:8080"
     command: "bin/pulsar standalone"
+  postgres-db:
+    image: "postgres:11"
+    environment:
+      - "POSTGRES_PASSWORD=example"
+      - "POSTGRES_USER=default"
+      - "POSTGRES_DB=default"
+    ports:
+      - "5480:5432"

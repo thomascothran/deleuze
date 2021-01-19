@@ -1,33 +1,6 @@
 (ns pro.thomascothran.deleuze.alpha.client
-  (:require [malli.json-schema :as json-schema]
-            [jsonista.core :as j])
-  (:import [org.apache.pulsar.client.api PulsarClient]
-           [org.apache.pulsar.client.api.schema SchemaDefinition]
-           [org.apache.pulsar.client.impl.schema
-            AvroSchema
-            JSONSchema
-            SchemaDefinitionBuilderImpl]))
+  (:import [org.apache.pulsar.client.api PulsarClient]))
 
-(defn ->json-schema
-  [^SchemaDefinition schema-def]
-  (JSONSchema/of schema-def))
-
-(defn <-json-schema
-  "WIP "
-  [malli-schema]
-  (let [json-def (-> (json-schema/transform malli-schema)
-                     (j/write-value-as-string))
-        schema-def (-> (SchemaDefinitionBuilderImpl.)
-                       (.withJsonDef json-def)
-                       (.build))
-        schema (->json-schema schema-def)]
-    #_schema
-    schema-def))
-(comment
-  (->> (<-json-schema [:map [:test-field string?]])
-      (.getPojo)
-      #_(instance? SchemaDefinition)
-      #_(.getJsonDef)))
 
 (defn topic-str
   [{persistent :pulsar.topic/persistent

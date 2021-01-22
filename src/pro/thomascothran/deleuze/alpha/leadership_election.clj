@@ -57,3 +57,30 @@
 (defn inspect
   [latch-atm]
   (-> @latch-atm :curator.leadership/latch -inspect))
+
+(defn -await-leader
+  ([latch] (-await-leader latch
+                          {::max-millis 100000
+                           ::retry-strategy ::inc-10sec}))
+  ([latch {:keys [::max-millis ::retry-strategy]
+           :as opts}]
+   (loop [millis 0]
+     (let [has-leader (-> (.getLeader latch) (.isLeader))
+           inc-fn (case retry-strategy
+                    ::inc-10sec #(+ % 10000))
+           next-millis (inc-fn millis)]
+      (cond has-leader
+          (do (println (assoc opts :msg "Has a leader"))
+              latch)
+          (> next-millis max-millis)
+          (throw (ex-info "Reached timeout"
+                          (assoc opts
+                                :type ::await-leader-timeout
+                                :next-millies next-millis)))
+          :else (do (Thread/sleep (- next-millis millis))
+                    (recur next-millis)))))))
+
+(defn await-leader
+  "Block until leader is acquired."
+  [latch-atm]
+  (-await-leader (-> @latch-atm :curator.leadership/latch)))

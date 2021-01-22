@@ -33,7 +33,7 @@
 (defn -start-latch
   ([] (-start-latch {:curator-framework/client @-client
                      :curator.leadership/path "/test/leadership"
-                     :curator.participant/id "a"
+                     :curator.participant/id "c"
                      :curator.leadership/on-leadership
                      #(println "Acquired leadership")
                      :curator.leadership/on-lost-leadership
@@ -44,8 +44,7 @@
      (pp/pprint  {:msg "Started latch"
                   :latch @latch
                   :latch-info (le/inspect latch)})
-     (Thread/sleep 55000)
-
+     (le/await-leader latch)
      (pp/pprint  {:msg "Closing latch"
                   :latch @latch
                   :latch-info (le/inspect latch)})

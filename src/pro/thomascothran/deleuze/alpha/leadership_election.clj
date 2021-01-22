@@ -1,6 +1,6 @@
 (ns pro.thomascothran.deleuze.alpha.leadership-election
-  (:require [org.apache.curator.framework.recipes.leader
-             LeaderLatch LeaderLatchListener]))
+  (:import [org.apache.curator.framework.recipes.leader
+            LeaderLatch LeaderLatchListener]))
 
 (defn latch
   "Start a leadership latch.
@@ -20,20 +20,40 @@
   - `:curator.leadership/latch` (LeadershipLatch).
   - `:curator.leadership/close!` (thunk) closes the latch."
   [{c :curator-framework/client
+    latch-id :curator.participant/id
     latch-path :curator.leadership/path
     on-leadership :curator.leadership/on-leadership
     on-lost-leadership :curator.leadership/on-lost-leadership}]
-  (let [latch (LeaderLatch. c latch-path)
-        a (atom {:curator.leadership/latch latch
-                 :curator.leadership/close! #(.close latch)})
+  (assert c)
+  (assert latch-path)
+  (assert latch-id)
+  (let [latch (LeaderLatch. c latch-path latch-id)
+        a (atom {:curator.participant/id latch-id})
         listener
-        (reify LeaderSelectorListener
-          (isLeader []
+        (reify LeaderLatchListener
+          (isLeader [this]
             (swap! a assoc :curator.latch/is-leader true)
             (when on-leadership (on-leadership)))
-          (notLeader []
+          (notLeader [this]
             (swap! a assoc :curator.latch/is-leader false)
             (when on-lost-leadership (on-lost-leadership))))]
+    (swap! a assoc
+           :curator.leadership/latch latch
+           :curator.latch/close! #(do (.removeListener latch listener)
+                                      (.close latch)))
     (.addListener latch listener)
     (.start latch)
     a))
+
+(defn -inspect
+  [latch]
+  {:curator.latch/state (.getState latch)
+   :curator.latch/participant-id (.getId latch)
+   :curator.latch/leader-id (-> (.getLeader latch)
+                                (.getId))
+   :curator.latch/partipants (.getParticipants latch)
+   :curator.latch/our-path (.getOurPath latch)})
+
+(defn inspect
+  [latch-atm]
+  (-> @latch-atm :curator.leadership/latch -inspect))

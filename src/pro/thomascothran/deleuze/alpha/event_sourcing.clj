@@ -421,6 +421,19 @@
     [:fn mi/schema?]]])
 
 (defn fire-command!
+  "Fire a command.
+
+  Will fetch the current state, apply the `:command/handler` to
+  the current state and the command, and then fire the event.
+  If there is a concurrency conflict, retries until `::max-attempts`
+  ceiling reached.
+
+  Params:
+  - `:command/handler`: takes the state and the command and
+     returns an event, except for the `aggregate/version`, which
+     is supplied automatically.
+  - `::max-attempts`: the maximum number of retires in case of
+    concurrency conflict."
   [{command          :command
     command-handler  :command/handler
     command-schema   :command/schema

@@ -31,7 +31,7 @@
     tenant     :pulsar.tenant/name
     namespace  :pulsar.namespace/name
     topic      :pulsar.topic/topic
-    schema     :pulsar.topic/schema ;; malli schema
+    ;; schema     :pulsar.topic/schema ;; malli schema
     :or {persistent true}}]
   (assert namespace)
   (assert topic)
@@ -55,6 +55,5 @@
                      :pulsar.topic/topic "test-topic"
                      #_#_:pulsar.topic/schema [:map
                                                   [:msg string?]]})]
-    (def p p)
     p))
 

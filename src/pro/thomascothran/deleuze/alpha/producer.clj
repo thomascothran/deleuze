@@ -9,7 +9,8 @@
     v :pulsar.message/value
     properties :pulsar.message/properties
     serializer :pulsar/serializer
-    :or {serializer :nippy/freeze}}]
+    :or {serializer :nippy/freeze
+         properties {}}}]
   (assert producer)
   (assert k)
   (assert v)

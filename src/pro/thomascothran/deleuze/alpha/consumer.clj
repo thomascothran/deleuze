@@ -3,7 +3,8 @@
              :as topics]
             [clojure.walk :refer [keywordize-keys]]
             [taoensso.nippy :refer [thaw]])
-  (:import [org.apache.pulsar.client.api SubscriptionType]))
+  (:import [org.apache.pulsar.client.api SubscriptionType
+            SubscriptionInitialPosition]))
 
 (defn consumer
   [{:keys [:pulsar/client]
@@ -13,8 +14,9 @@
     namespace  :pulsar.namespace/name
     topic      :pulsar.topic/topic
     #_#_schema     :pulsar.topic/schema ;; malli schema
-    :as opts
-    }]
+    initial-position ::initial-position
+    :or {initial-position ::earliest}
+    :as opts}]
   (assert subs-name)
   (assert subs-type)
   (assert tenant)
@@ -26,11 +28,17 @@
                      :exclusive SubscriptionType/Exclusive
                      :failover SubscriptionType/Failover
                      :key-shared SubscriptionType/Key_Shared)
+        initial-position' (case initial-position
+                           ::earliest
+                           (SubscriptionInitialPosition/Earliest)
+                           ::latest
+                           (SubscriptionInitialPosition/Earliest))
         topics [(topics/topic-str opts)]
         consumer' (doto (.newConsumer client)
                     (.topics topics)
                     (.subscriptionName subs-name)
-                    (.subscriptionType subs-type'))]
+                    (.subscriptionType subs-type')
+                    (.subscriptionInitialPosition initial-position'))]
     (.subscribe consumer')))
 
 (defn receive-sync!

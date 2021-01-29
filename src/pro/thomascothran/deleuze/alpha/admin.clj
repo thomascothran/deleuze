@@ -2,7 +2,6 @@
   (:import [org.apache.pulsar.client.admin PulsarAdmin]
            [org.apache.pulsar.common.policies.data TenantInfo
             RetentionPolicies]
-
            [java.util Set]))
 
 (declare get-namespaces)

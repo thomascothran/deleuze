@@ -26,12 +26,40 @@
       (.getList (str tenant "/" ns-name))))
 
 (defn delete-topic!
- [{client :pulsar/admin-client
-   _persistent :pulsar.topic/persistent
-   _tenant     :pulsar.tenant/name
-   _ns-name   :pulsar.namespace/name
-   _topic      :pulsar.topic/topic
-   :as opts}]
+  [{client :pulsar/admin-client
+    _persistent :pulsar.topic/persistent
+    _tenant     :pulsar.tenant/name
+    _ns-name   :pulsar.namespace/name
+    _topic      :pulsar.topic/topic
+    :as opts}]
   (let [topic-str' (topic-str opts)]
     (-> (.topics client)
         (.delete topic-str'))))
+
+(defn delete-all-topics!
+  [{client :pulsar/admin-client
+    _persistent :pulsar.topic/persistent
+    tenant     :pulsar.tenant/name
+    ns-name   :pulsar.namespace/name
+    force-delete ::force-delete
+    :as opts}]
+  (assert client)
+  (assert tenant)
+  (assert ns-name)
+  (let [all-topics' (all-topics opts)
+        topics (.topics client)
+        delete!
+        (fn [topic]
+          (if force-delete
+            (.delete topics topic true)
+            (.delete topics topic true)))]
+    (doseq [topic all-topics']
+      (try (delete! topic)
+           (catch Exception e
+             (let [edata (ex-data e)]
+               (throw (ex-info "Cannot delete all topics"
+                               {:topic topic
+                                ::force-delete force-delete
+                                :all-topics' all-topics'
+                                :error e
+                                :error-data edata}))))))))

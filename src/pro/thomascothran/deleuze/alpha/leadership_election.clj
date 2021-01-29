@@ -60,7 +60,7 @@
 
 (defn -await-leader
   ([latch] (-await-leader latch
-                          {::max-millis 100000
+                          {::max-millis 120000
                            ::retry-strategy ::inc-10sec}))
   ([latch {:keys [::max-millis ::retry-strategy]
            :as opts}]
@@ -81,6 +81,6 @@
                     (recur next-millis)))))))
 
 (defn await-leader
-  "Block until leader is acquired."
+  "Block until leader is known to be acquired."
   [latch-atm]
   (-await-leader (-> @latch-atm :curator.leadership/latch)))

@@ -1,7 +1,7 @@
 (ns pro.thomascothran.deleuze.alpha.lock-fiddle
   (:require [next.jdbc :as jdbc]
             [pro.thomascothran.deleuze.alpha.locks
-             :refer [lock! unlock!]]))
+             :refer [lock! #_unlock!]]))
 
 (defonce -ds
   (atom nil))

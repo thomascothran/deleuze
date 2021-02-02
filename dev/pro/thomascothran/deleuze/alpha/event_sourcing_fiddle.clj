@@ -140,7 +140,7 @@
     (-connect)
     (es/setup! {:datasource @-ds
                 :pulsar/admin-client ac
-                :tenant/name "test-tenant"})
+                :pulsar.tenant/name "test-tenant"})
     (let [cb (fn [{body :pulsar.message/body
                    acknowledge! :pulsar.message/acknowledge!
                    :as _msg}]
@@ -156,10 +156,11 @@
                               :pulsar.subscription/name
                               "test-subscription"
                               :pulsar.subscription/type :exclusive})]
+
       (try (es/log-event! {:datasource @-ds
                            :pulsar/client c
                            :events/schema -event-schema
-                           :tenant/name "test-tenant"
+                           :pulsar.tenant/name "test-tenant"
                            :state-schema -state-schema
                            :reducer -reducer
                            :event -event})
@@ -167,25 +168,26 @@
                            :pulsar/client c
                            :events/schema -event-schema
                            :state-schema -state-schema
-                           :tenant/name "test-tenant"
+                           :pulsar.tenant/name "test-tenant"
                            :reducer -reducer
                            :event -event2})
            (es/log-event! {:datasource @-ds
                            :pulsar/client c
                            :events/schema -event-schema
                            :state-schema -state-schema
-                           :tenant/name "test-tenant"
+                           :pulsar.tenant/name "test-tenant"
                            :reducer -reducer
                            :event -event3})
            (es/fire-command! {:datasource @-ds
                               :pulsar/client c
                               :events/schema -event-schema
                               :state-schema -state-schema
-                              :tenant/name "test-tenant"
+                              :pulsar.tenant/name "test-tenant"
                               :reducer -reducer
                               :command -command
                               :command/schema -command-schema
                               :command/handler -command-handler})
+
 
            (future (consumer/receive-sync! {:pulsar/consumer consumer
                                             ::consumer/callback cb}))
@@ -195,5 +197,5 @@
              (pp/pprint {:error (ex-data e)}))
            (finally (es/teardown! {:datasource @-ds
                                    :pulsar/admin-client ac
-                                   :tenant/name "test-tenant"}))))
+                                   :pulsar.tenant/name "test-tenant"}))))
     (-disconnect)))

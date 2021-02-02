@@ -42,6 +42,7 @@
               "  aggregate_id   UUID NOT NULL,"
               "  aggregate_name TEXT NOT NULL,"
               "  tenant_name    TEXT,"
+              "  namespace_name TEXT,"
               "  version        BIGINT NOT NULL,"
               "  occurred_at    TIMESTAMP NOT NULL,"
               "  created_at     TIMESTAMPTZ default now(),"
@@ -55,6 +56,7 @@
               "( "
               "  aggregate_id   UUID NOT NULL,"
               "  tenant_name    TEXT,"
+              "  namespace_name TEXT,"
               "  aggregate_name TEXT NOT NULL,"
               "  version        BIGINT NOT NULL,"
               "  created_at     TIMESTAMPTZ default now(),"
@@ -74,7 +76,7 @@
   [:map
    [:pulsar/admin-client
     [:fn (fn [x] (instance? PulsarAdmin x))]]
-   [:tenant/name string?]])
+   [:pulsar.tenant/name string?]])
 (defn -setup-pulsar!
   "Idempotent function to setup pulsar for event sourcing.
 
@@ -82,9 +84,11 @@
 
   Params:
   ------
-  - `:tenant/name`: the name of the application
+  - `:pulsar.tenant/name`: the name of the application
   - `:pulsar.admin-client`"
-  [{tenant-name   :tenant/name
+  [{tenant-name   :pulsar.tenant/name
+    namespace-name :pulsar.namespace/name
+    :or {namespace-name "deleuze_aggregate_events"}
     :as opts}]
   (when-not (mi/validate SetupPulsarOpts opts)
     (let [err (mi/explain SetupPulsarOpts opts)]
@@ -93,16 +97,16 @@
                        :type ::invalid-setup-pulsar-opts
                        :msg (me/humanize err)}))))
   (let [opts' (->  opts
-                   (rename-keys {:tenant/name :pulsar.tenant/name})
                    (assoc :pulsar.namespace/name
-                          "deleuze_aggregate_events"))
+                          namespace-name))
+        _ (println {:opts opts'})
         tenants
         (->> (da/tenants opts') set)
         tenant-exists? (tenants tenant-name)
         namespaces
         (when tenant-exists?
           (->> (da/get-namespaces opts') set))
-        full-ns (str tenant-name "/" "deleuze_aggregate_events")
+        full-ns (str tenant-name "/" namespace-name)
         namespace-exists?
         (when tenant-exists?
           (namespaces full-ns))]
@@ -113,27 +117,28 @@
 (comment
   (with-open [ac (da/client {:pulsar.service/admin-url
                              "http://localhost:8080"})]
-    (-setup-pulsar! {:tenant/name "abc"
+    (-setup-pulsar! {:pulsar.tenant/name "abc"
                      :pulsar/admin-client ac})))
 
 (defn -teardown-pulsar!
   "Removes pulsar setup. For use in, e.g., testing."
   [{admin-client :pulsar/admin-client
-    tenant-name  :tenant/name
+    tenant-name  :pulsar.tenant/name
+    namespace-name :pulsar.namespace/name
+    :or {namespace-name "deleuze_aggregate_events"}
     :as opts}]
   (assert admin-client)
   (assert tenant-name)
-  (let [opts' (rename-keys opts {:tenant/name :pulsar.tenant/name})]
-    (dt/delete-all-topics! (assoc opts' :pulsar.namespace/name
-                                  "deleuze_aggregate_events"
-                                  ::dt/force-delete true))
-    (da/delete-namespace! (assoc opts' :pulsar.namespace/name
-                                 "deleuze_aggregate_events"))
+  (let [opts' (assoc opts :pulsar.namespace/name
+                     namespace-name
+                     ::dt/force-delete true)]
+    (dt/delete-all-topics! opts')
+    (da/delete-namespace! opts')
     (da/delete-tenant! opts')))
 (comment
   (with-open [ac (da/client {:pulsar.service/admin-url
                              "http://localhost:8080"})]
-    (-teardown-pulsar! {:tenant/name "abc"
+    (-teardown-pulsar! {:pulsar.tenant/name "abc"
                         :pulsar/admin-client ac})))
 
 (defn setup!
@@ -153,7 +158,7 @@
   "Returns the current state of an aggregate."
   [{agg-id      :aggregate/id
     agg-name    :aggregate/name
-    tenant-name :tenant/name
+    tenant-name :pulsar.tenant/name
     datasource  :datasource}]
   (assert (uuid? agg-id))
   (assert (keyword? agg-name))
@@ -285,7 +290,7 @@
     [:fn mi/schema?]]
    [:event Event]
    [:reducer -Reducer]
-   [:tenant/name string?]
+   [:pulsar.tenant/name string?]
    [:pulsar/client
     [:fn (fn [pc] (instance? PulsarClient pc))]]
    [:datasource
@@ -300,7 +305,7 @@
 
   Params
   ------
-  - `:tenant/name`: The name of the tenant. This is not the
+  - `:pulsar.tenant/name`: The name of the tenant. This is not the
     pulsar tenant (which should be the application name) but the
     tenants within the application itself.
   - `event`: the event.
@@ -311,6 +316,8 @@
     {version  :aggregate/version
      agg-id   :aggregate/id
      agg-name :aggregate/name} :event
+    namespace-name :pulsar.namespace/name
+    :or {namespace-name "deleuze_aggregate_events"}
     :keys [:datasource :event]
     :as opts}]
   (when-not (mi/validate UpdateOpts opts)
@@ -329,7 +336,7 @@
   (let [row
         (-> (rename-keys event {:event/occurred-at "occurred_at"
                                 :aggregate/version "version"
-                                :tenant/name       "tenant_name"
+                                :pulsar.tenant/name       "tenant_name"
                                 :aggregate/name    "aggregate_name"
                                 :aggregate/id      "aggregate_id"})
             (update "aggregate_name" kw->str)
@@ -340,11 +347,9 @@
         (current-version (assoc event :datasource datasource))
         producer-opts (-> (assoc opts
                                  :pulsar.namespace/name
-                                 "deleuze_aggregate_events"
+                                 namespace-name
                                  :pulsar.topic/topic
-                                 (kw->str agg-name))
-                          (rename-keys {:tenant/name
-                                        :pulsar.tenant/name}))]
+                                 (kw->str agg-name)))]
     (when (or (and (= 0 version) (not (nil? current-version')))
               (and (not= 0 version) (not= current-version' (dec version))))
       (throw (ex-info "Version mismatch"
@@ -414,7 +419,9 @@
     [:fn fn?]]
    [:datasource [:fn (fn [ds] (instance? DataSource ds))]]
    [:reducer -Reducer]
-   [:tenant/name string?]
+   [:pulsar.tenant/name string?]
+   [:pulsar.namespace/name {:optional true}
+    string?]
    [:pulsar/client
     [:fn (fn [pc] (instance? PulsarClient pc))]]
    [:events/schema

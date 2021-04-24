@@ -1,4 +1,25 @@
 (ns pro.thomascothran.deleuze.alpha.event-sourcing
+  "An opinionated event sourcing framework.
+
+  Core decisions:
+  - Commands are synchronous, leveraging postgres'
+    constraints (on aggregate id and version).
+  - Events are stored both in Postgres and in Pulsar.
+    + Pulsar used for replays.
+    + Postgres used for computing current state.
+  - All events of the same aggregate type go into
+    the same pulsar topic.
+    + E.g., if I have an aggregate 'users', then all
+      the events pertaining to all `users' go into
+      the same pulsar topic.
+  - Pulsar, by default, keeps events forever. Use
+    Tiered offloading for this.
+  - Snapshots are used for the current state.
+
+  TODO
+  - Provide a mechanism to recompute current state.
+    + Maybe load into a pulsar topic and delete when done?
+  "
   (:require [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql]
             [next.jdbc.date-time]
@@ -429,11 +450,21 @@
   ceiling reached.
 
   Params:
+  - `:datasource` - a `jdbc` datasource.
+  - `:command` - the command to be attempted
+  - `:command/schema` - the malli schema for the command.
+    Typically a `:multi` schema keyed on `:command/type`.
+  - `:reducer` - a function that takes the current state
+    of the aggregate and the event, and produces the next
+    state.
+  - `:event/schema` - the malli schema for an event. Typically
+    a `:multi` schema keyed on the event type.
   - `:command/handler`: takes the state and the command and
      returns an event, except for the `aggregate/version`, which
      is supplied automatically.
   - `::max-attempts`: the maximum number of retires in case of
-    concurrency conflict."
+    concurrency conflict.
+  - `:tenant/name` - ??? pulsar tenant or application tenant?"
   [{command          :command
     command-handler  :command/handler
     command-schema   :command/schema

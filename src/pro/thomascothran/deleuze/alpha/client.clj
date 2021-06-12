@@ -1,5 +1,6 @@
 (ns pro.thomascothran.deleuze.alpha.client
-  (:import [org.apache.pulsar.client.api PulsarClient]))
+  (:import [org.apache.pulsar.client.api PulsarClient]
+           [org.apache.pulsar.client.api CompressionType]))
 
 
 (defn topic-str
@@ -24,20 +25,30 @@
   (let [{:keys [pulsar]} (user/sys)]
     (client pulsar)))
 
+(def -compression-types
+  {:lz4 CompressionType/LZ4
+   :zlib CompressionType/ZLIB
+   :zstd CompressionType/ZSTD
+   :snappy CompressionType/SNAPPY
+   nil  CompressionType})
 
 (defn producer
   [{:keys [:pulsar/client] :as _pulsar
-    persistent :pulsar.topic/persistent
-    tenant     :pulsar.tenant/name
-    namespace  :pulsar.namespace/name
-    topic      :pulsar.topic/topic
+    persistent  :pulsar.topic/persistent
+    tenant      :pulsar.tenant/name
+    namespace   :pulsar.namespace/name
+    topic       :pulsar.topic/topic
+    compression :pulsar/compression
     ;; schema     :pulsar.topic/schema ;; malli schema
     :or {persistent true}}]
   (assert namespace)
   (assert topic)
   (assert client)
   (assert tenant)
-  (let [topic-str' #_topic
+  (let [compression-type (get -compression-types
+                              compression)
+        _ (assert compression-type)
+        topic-str' #_topic
         (topic-str #:pulsar.topic
                               {:persistent persistent
                                :tenant     tenant

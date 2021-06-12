@@ -4,16 +4,11 @@
   Core decisions:
   - Commands are synchronous, leveraging postgres'
     constraints (on aggregate id and version).
-  - Events are stored both in Postgres and in Pulsar.
+  - Single source of truth for events is Postgres
     + Pulsar used for replays.
     + Postgres used for computing current state.
-  - All events of the same aggregate type go into
-    the same pulsar topic.
-    + E.g., if I have an aggregate 'users', then all
-      the events pertaining to all `users' go into
-      the same pulsar topic.
-  - Pulsar, by default, keeps events forever. Use
-    Tiered offloading for this.
+  - Message propagation is a separate concern.
+    + Recommend using Debezium
   - Snapshots are used for the current state.
 
   TODO
@@ -28,14 +23,9 @@
             [malli.core :as mi]
             [malli.error :as me]
             [malli.util :as mu]
-            [pro.thomascothran.deleuze.alpha.admin :as da]
-            [pro.thomascothran.deleuze.alpha.client :as dc]
-            [pro.thomascothran.deleuze.alpha.producer :as dp]
-            [pro.thomascothran.deleuze.alpha.topics :as dt]
             #_[java.sql Connection])
-  (:import [javax.sql DataSource]
-           [org.apache.pulsar.client.admin PulsarAdmin]
-           [org.apache.pulsar.client.api PulsarClient]))
+  (:import [javax.sql DataSource]))
+
 
 (defn kw->str
   [kw]
@@ -63,7 +53,7 @@
               "  aggregate_id   UUID NOT NULL,"
               "  aggregate_name TEXT NOT NULL,"
               "  tenant_name    TEXT,"
-              "  namespace_name TEXT,"
+              "  serializer     TEXT NOT NULL,"
               "  version        BIGINT NOT NULL,"
               "  occurred_at    TIMESTAMP NOT NULL,"
               "  created_at     TIMESTAMPTZ default now(),"
@@ -78,6 +68,7 @@
               "  aggregate_id   UUID NOT NULL,"
               "  tenant_name    TEXT,"
               "  namespace_name TEXT,"
+              "  serializer     TEXT NOT NULL,"
               "  aggregate_name TEXT NOT NULL,"
               "  version        BIGINT NOT NULL,"
               "  created_at     TIMESTAMPTZ default now(),"
@@ -93,86 +84,16 @@
   (jdbc/execute! datasource ["DROP TABLE deleuze_event_store"])
   (jdbc/execute! datasource ["DROP TABLE deleuze_aggregate_snapshots"]))
 
-(def SetupPulsarOpts
-  [:map
-   [:pulsar/admin-client
-    [:fn (fn [x] (instance? PulsarAdmin x))]]
-   [:pulsar.tenant/name string?]])
-(defn -setup-pulsar!
-  "Idempotent function to setup pulsar for event sourcing.
-
-  Sets up the tenant and the namespace.
-
-  Params:
-  ------
-  - `:pulsar.tenant/name`: the name of the application
-  - `:pulsar.admin-client`"
-  [{tenant-name   :pulsar.tenant/name
-    namespace-name :pulsar.namespace/name
-    :or {namespace-name "deleuze_aggregate_events"}
-    :as opts}]
-  (when-not (mi/validate SetupPulsarOpts opts)
-    (let [err (mi/explain SetupPulsarOpts opts)]
-      (throw (ex-info "Invalid opts"
-                      {:error err
-                       :type ::invalid-setup-pulsar-opts
-                       :msg (me/humanize err)}))))
-  (let [opts' (->  opts
-                   (assoc :pulsar.namespace/name
-                          namespace-name))
-        _ (println {:opts opts'})
-        tenants
-        (->> (da/tenants opts') set)
-        tenant-exists? (tenants tenant-name)
-        namespaces
-        (when tenant-exists?
-          (->> (da/get-namespaces opts') set))
-        full-ns (str tenant-name "/" namespace-name)
-        namespace-exists?
-        (when tenant-exists?
-          (namespaces full-ns))]
-    (when-not tenant-exists?
-      (da/create-tenant! opts'))
-    (when-not namespace-exists?
-      (da/create-namespace! opts'))))
-(comment
-  (with-open [ac (da/client {:pulsar.service/admin-url
-                             "http://localhost:8080"})]
-    (-setup-pulsar! {:pulsar.tenant/name "abc"
-                     :pulsar/admin-client ac})))
-
-(defn -teardown-pulsar!
-  "Removes pulsar setup. For use in, e.g., testing."
-  [{admin-client :pulsar/admin-client
-    tenant-name  :pulsar.tenant/name
-    namespace-name :pulsar.namespace/name
-    :or {namespace-name "deleuze_aggregate_events"}
-    :as opts}]
-  (assert admin-client)
-  (assert tenant-name)
-  (let [opts' (assoc opts :pulsar.namespace/name
-                     namespace-name
-                     ::dt/force-delete true)]
-    (dt/delete-all-topics! opts')
-    (da/delete-namespace! opts')
-    (da/delete-tenant! opts')))
-(comment
-  (with-open [ac (da/client {:pulsar.service/admin-url
-                             "http://localhost:8080"})]
-    (-teardown-pulsar! {:pulsar.tenant/name "abc"
-                        :pulsar/admin-client ac})))
 
 (defn setup!
   "Setup database and pulsar for deleuze event sourcing."
   [opts]
-  (-setup-pulsar! opts)
   (-create-tables! opts))
 
 (defn teardown!
   "Deletes database tables and pulsar tenants/namespaces related.
   For testing purposes."
   [opts]
-  (-teardown-pulsar! opts)
   (-delete-tables! opts))
 
 (defn state
@@ -311,9 +232,6 @@
     [:fn mi/schema?]]
    [:event Event]
    [:reducer -Reducer]
-   [:pulsar.tenant/name string?]
-   [:pulsar/client
-    [:fn (fn [pc] (instance? PulsarClient pc))]]
    [:datasource
     [:fn (fn [ds] (instance? DataSource ds))]]])
 
@@ -334,11 +252,9 @@
     the aggregate and the event, and produces a new state.
   - `events/schema`: a malli schema for the events."
   [{event-schema :events/schema
-    {version  :aggregate/version
-     agg-id   :aggregate/id
-     agg-name :aggregate/name} :event
-    namespace-name :pulsar.namespace/name
-    :or {namespace-name "deleuze_aggregate_events"}
+    {version  :aggregate/version} :event
+    serializer     :serializer
+    :or {serializer :edn-in-avro}
     :keys [:datasource :event]
     :as opts}]
   (when-not (mi/validate UpdateOpts opts)
@@ -354,23 +270,21 @@
                        :opts opts
                        :type ::invalid-update-event
                        :error-msg (me/humanize err)}))))
-  (let [row
-        (-> (rename-keys event {:event/occurred-at "occurred_at"
-                                :aggregate/version "version"
-                                :pulsar.tenant/name       "tenant_name"
-                                :aggregate/name    "aggregate_name"
-                                :aggregate/id      "aggregate_id"})
-            (update "aggregate_name" kw->str)
-            (assoc "event" (freeze event))
-            (select-keys ["version" "aggregate_name" "occurred_at"
-                          "aggregate_id" "event" "tenant_name"]))
+  (let [serializer-fn (case serializer
+                        :edn-in-avro
+                        #(avro/binary-encoded @-edn-in-avro-schema %))
+        row
+        (-> (rename-keys event {:event/occurred-at :occurred_at
+                                :aggregate/version :version
+                                :pulsar.tenant/name       :tenant_name
+                                :aggregate/name    :aggregate_name
+                                :aggregate/id      :aggregate_id})
+            (update :aggregate_name kw->str)
+            (assoc :event (serializer-fn event))
+            (select-keys [:version :aggregate_name :occurred_at
+                          :aggregate_id :event :serializer]))
         current-version'
-        (current-version (assoc event :datasource datasource))
-        producer-opts (-> (assoc opts
-                                 :pulsar.namespace/name
-                                 namespace-name
-                                 :pulsar.topic/topic
-                                 (kw->str agg-name)))]
+        (current-version (assoc event :datasource datasource))]
     (when (or (and (= 0 version) (not (nil? current-version')))
               (and (not= 0 version) (not= current-version' (dec version))))
       (throw (ex-info "Version mismatch"
@@ -380,11 +294,7 @@
                        :type ::version-mismatch})))
     (try (jdbc/with-transaction [tx datasource]
            (sql/insert! tx :deleuze_event_store row)
-           (-update-state! (assoc opts :datasource tx))
-           (with-open [producer (dc/producer producer-opts)]
-             (dp/send! {:pulsar/producer producer
-                        :pulsar.message/value event
-                        :pulsar.message/key agg-id})))
+           (-update-state! (assoc opts :datasource tx)))
          (catch Exception e
            (throw (ex-info "Error updating aggregate"
                            (assoc opts
@@ -405,6 +315,7 @@
   [{event      :event
     datasource :datasource
     max-attempts ::max-attempts
+    :or {max-attempts 25}
     :as opts}]
   (when-not (mi/validate LogEventOpts opts)
     (let [err (mi/explain LogEventOpts opts)]
@@ -440,11 +351,6 @@
     [:fn fn?]]
    [:datasource [:fn (fn [ds] (instance? DataSource ds))]]
    [:reducer -Reducer]
-   [:pulsar.tenant/name string?]
-   [:pulsar.namespace/name {:optional true}
-    string?]
-   [:pulsar/client
-    [:fn (fn [pc] (instance? PulsarClient pc))]]
    [:events/schema
     [:fn mi/schema?]]])
 

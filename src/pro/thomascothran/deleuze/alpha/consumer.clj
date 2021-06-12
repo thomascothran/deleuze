@@ -50,11 +50,13 @@
   [{consumer :pulsar/consumer
     callback ::callback}]
   (loop [msg (.receive consumer)]
-    (let [body (-> (.getData msg)
-                   thaw)
+    (let [
           properties (-> (into {} (.getProperties msg))
                          keywordize-keys
                          (update :deleuze/serializer keyword))
+          body (case (:deleuze/serializer properties)
+                 :nippy/freeze
+                 (-> (.getData msg) thaw))
           m {:pulsar.message/body body
              :pulsar.message/key (.getKey msg)
              :pulsar.message/properties properties

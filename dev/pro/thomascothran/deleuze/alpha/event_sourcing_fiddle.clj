@@ -141,13 +141,13 @@
     (es/setup! {:datasource @-ds
                 :pulsar/admin-client ac
                 :pulsar.tenant/name "test-tenant"})
-    (let [cb (fn [{body :pulsar.message/body
+    (let [#_#_cb (fn [{body :pulsar.message/body
                    acknowledge! :pulsar.message/acknowledge!
                    :as _msg}]
                (pp/pprint {#_#_:received-msg msg
                            :body body})
                (acknowledge!))
-          consumer
+          #_#_consumer
           (consumer/consumer {:pulsar/client c
                               :pulsar.topic/topic "cool-people"
                               :pulsar.namespace/name
@@ -158,28 +158,22 @@
                               :pulsar.subscription/type :exclusive})]
 
       (try (es/log-event! {:datasource @-ds
-                           :pulsar/client c
                            :events/schema -event-schema
-                           :pulsar.tenant/name "test-tenant"
                            :state-schema -state-schema
                            :reducer -reducer
                            :event -event})
            (es/log-event! {:datasource @-ds
-                           :pulsar/client c
                            :events/schema -event-schema
                            :state-schema -state-schema
-                           :pulsar.tenant/name "test-tenant"
                            :reducer -reducer
                            :event -event2})
            (es/log-event! {:datasource @-ds
-                           :pulsar/client c
                            :events/schema -event-schema
                            :state-schema -state-schema
                            :pulsar.tenant/name "test-tenant"
                            :reducer -reducer
                            :event -event3})
            (es/fire-command! {:datasource @-ds
-                              :pulsar/client c
                               :events/schema -event-schema
                               :state-schema -state-schema
                               :pulsar.tenant/name "test-tenant"
@@ -187,15 +181,14 @@
                               :command -command
                               :command/schema -command-schema
                               :command/handler -command-handler})
+           (def rows
+             (jdbc/execute! @-ds ["select * from deleuze_event_store"]))
+           (clojure.pprint/pprint rows)
 
-
-           (future (consumer/receive-sync! {:pulsar/consumer consumer
-                                            ::consumer/callback cb}))
-           (Thread/sleep 50)
+           ;; (future (consumer/receive-sync! {:pulsar/consumer consumer
+           ;;                                  ::consumer/callback cb}))
            (catch Exception e
              (def e e)
              (pp/pprint {:error (ex-data e)}))
-           (finally (es/teardown! {:datasource @-ds
-                                   :pulsar/admin-client ac
-                                   :pulsar.tenant/name "test-tenant"}))))
+           (finally (es/teardown! {:datasource @-ds}))))
     (-disconnect)))

@@ -1,13 +1,13 @@
 # Propagating Events with Event Sourcing
 
-* Status: investigation
+* Status: accepted
 * Date created: 2021-05-22
+* Date completed: 2021-07-19
 
 ## Context
 
-Question for Pulsar slack.
 
-I'm evaluating Pulsar for a CQRS/event sourced application. In an event source application, the state is a reduction over a series of events that together constitute an aggregate. 
+In an event source application, the state is a reduction over a series of events that together constitute an aggregate. 
 
 An event store table would be created like this:
 
@@ -175,3 +175,5 @@ However, we have a few problems to solve here.
 ## Decision
 
 We will use option #2. Although it imposes some extra setup, it is likely the easiest and the most decoupled.
+
+## Experience Report

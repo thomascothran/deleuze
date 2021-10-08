@@ -1,18 +1,32 @@
 (ns pro.thomascothran.deleuze.alpha.serializers
   (:require [abracad.avro.edn :as aedn]
             [abracad.avro :as avro])
-  (:import [java.util UUID]))
+  (:import [java.util UUID]
+           [java.time Instant]))
 
 (extend-protocol aedn/EDNAvroSerializable
   UUID
   (-schema-name [_] "pro.thomascothran.deleuze.alpha.serializers.UUID") ;; name as something else?
   (field-get [this field]
-    (def this this)
-    (def field field)
+    this)
+  (field-list [this] #{:value})
+
+  Instant
+  (-schema-name [_]
+    "pro.thomascothran.deleuze.alpha.serializers.Instant")
+  (field-get [this _field]
     this)
   (field-list [this] #{:value}))
+
 (extend-protocol avro/AvroSerializable
   UUID
+  (schema-name [_] "string")
+  (field-get [this _field]
+    (str this))
+  (field-list [this]
+    [:value])
+
+  Instant
   (schema-name [_] "string")
   (field-get [this _field]
     (str this))
@@ -22,9 +36,14 @@
 (defn ->uuid
   [s]
   (UUID/fromString s))
+(defn ->instant
+  [s]
+  (Instant/parse s))
 
 (def -additional-elements
   [{:type "record" :name "pro.thomascothran.deleuze.alpha.serializers.UUID"
+    :fields [{:name "value" :type "string"}]}
+   {:type "record" :name "pro.thomascothran.deleuze.alpha.serializers.Instant"
     :fields [{:name "value" :type "string"}]}])
 
 (def -edn-in-avro-schema
@@ -50,10 +69,15 @@
      (binding [avro/*avro-readers*
                (assoc avro/*avro-readers*
                       'pro.thomascothran.deleuze.alpha.serializers/UUID
-                      #'->uuid)]
+                      #'->uuid
+                      'pro.thomascothran.deleuze.alpha.serializers/Instant
+                      #'->instant)]
        (avro/decode -edn-in-avro-schema x)))))
 
 (comment
   (->> {:abc 123 :utc (java.util.UUID/randomUUID)}
        (serialize)
        (deserialize)))
+(comment
+  (->> #{:a :b :c (Instant/now)}
+       serialize deserialize))

@@ -18,11 +18,12 @@
   (:require [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql]
             [next.jdbc.date-time]
-            [taoensso.nippy :refer [freeze thaw]]
             [clojure.set :refer [rename-keys]]
             [malli.core :as mi]
             [malli.error :as me]
             [malli.util :as mu]
+            [pro.thomascothran.deleuze.alpha.serializers
+             :refer [serialize deserialize]]
             #_[java.sql Connection])
   (:import [javax.sql DataSource]))
 
@@ -114,7 +115,7 @@
                         :aggregate/state
                         :deleuze_aggregate_snapshots/version
                         :aggregate/version})
-          (update :aggregate/state #(some-> % thaw))
+          (update :aggregate/state #(some-> % deserialize))
           (select-keys [:aggregate/state :aggregate/version])))
 
 (def Event
@@ -149,7 +150,7 @@
      agg-id    :aggregate/id
      agg-name  :aggregate/name
      :as event} :event
-    :keys [:datasource :reducer :state-schema]
+    :keys [:datasource :reducer :state-schema :serializer]
     :as opts}]
   (assert agg-id)
   (assert agg-name)
@@ -172,10 +173,12 @@
       (sql/insert! datasource :deleuze_aggregate_snapshots
                    {"aggregate_id" agg-id
                     "aggregate_name" (kw->str agg-name)
+                    "serializer" (kw->str serializer)
                     "version" version
-                    "state" (freeze new-state)})
+                    "state" (serialize new-state)})
       (sql/update! datasource :deleuze_aggregate_snapshots
-                   {"state" (freeze new-state)
+                   {"state" (serialize new-state)
+                    "serializer" (kw->str serializer)
                     "version" (:aggregate/version event)}
                    {"aggregate_id" agg-id}))
     new-state))
@@ -253,7 +256,7 @@
   - `events/schema`: a malli schema for the events."
   [{event-schema :events/schema
     {version  :aggregate/version} :event
-    serializer     :serializer
+    serializer :serializer
     :or {serializer :edn-in-avro}
     :keys [:datasource :event]
     :as opts}]
@@ -270,23 +273,24 @@
                        :opts opts
                        :type ::invalid-update-event
                        :error-msg (me/humanize err)}))))
-  (let [serializer-fn (case serializer
-                        :edn-in-avro
-                        #(avro/binary-encoded @-edn-in-avro-schema %))
-        row
+  (let [row
         (-> (rename-keys event {:event/occurred-at :occurred_at
                                 :aggregate/version :version
-                                :pulsar.tenant/name       :tenant_name
+                                :pulsar.tenant/name :tenant_name
+                                :tenant/name       :tenant_name
                                 :aggregate/name    :aggregate_name
                                 :aggregate/id      :aggregate_id})
             (update :aggregate_name kw->str)
-            (assoc :event (serializer-fn event))
+            (assoc :event (serialize event)
+                   :serializer (kw->str serializer))
             (select-keys [:version :aggregate_name :occurred_at
-                          :aggregate_id :event :serializer]))
+                          :aggregate_id :event :serializer :tenant_name]))
         current-version'
         (current-version (assoc event :datasource datasource))]
     (when (or (and (= 0 version) (not (nil? current-version')))
               (and (not= 0 version) (not= current-version' (dec version))))
+      (println {:version version
+                :current-version current-version'})
       (throw (ex-info "Version mismatch"
                       {:current-version current-version'
                        :new-version version
@@ -294,7 +298,8 @@
                        :type ::version-mismatch})))
     (try (jdbc/with-transaction [tx datasource]
            (sql/insert! tx :deleuze_event_store row)
-           (-update-state! (assoc opts :datasource tx)))
+           (-update-state! (assoc opts :datasource tx
+                                  :serializer serializer)))
          (catch Exception e
            (throw (ex-info "Error updating aggregate"
                            (assoc opts
@@ -315,7 +320,7 @@
   [{event      :event
     datasource :datasource
     max-attempts ::max-attempts
-    :or {max-attempts 25}
+    :or {max-attempts 0 #_25}
     :as opts}]
   (when-not (mi/validate LogEventOpts opts)
     (let [err (mi/explain LogEventOpts opts)]
@@ -334,6 +339,7 @@
                               inc)
                       0)
           attempt 0]
+      (println {:version version :attempt attempt})
       (let [result (update! version)]
         (cond (= ::success result)
               result
